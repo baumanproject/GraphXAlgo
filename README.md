@@ -1,2 +1,2 @@
 # GraphXAlgo
-GraphX realixation for BFS with depth, Dijkstra, Yen
+GraphX realization for BFS with depth, Dijkstra, Yen

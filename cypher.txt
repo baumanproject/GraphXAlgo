@@ -1,0 +1,128 @@
+
+
+CALL apoc.periodic.iterate('
+CALL apoc.load.csv("InstagramUserStats.csv", {header:true, ignore:["flr","flg","er","fg","op"]})
+yield map as row return row
+','
+CREATE (ir:User) SET ir = row
+', {batchSize:10000, iterateList:true, parallel:true});
+
+
+
+CALL apoc.periodic.iterate('
+CALL apoc.load.csv("Network.csv", {header:true})
+yield map as row return row ','
+CREATE (ir:InternalReferences) SET ir = row
+', {batchSize:10000, iterateList:true, parallel:true});
+
+CREATE CONSTRAINT UniqueUser ON (p:User) ASSERT p.id IS UNIQUE;
+
+MATCH (ir:InternalReferences)
+MATCH (to_paper:User {id: ir.Node1})
+MATCH (from_paper:User {id: ir.Node2})
+CREATE (from_paper)-[rel:FOLLOW{cost:toFloat(ir.Weight)}]->(to_paper)
+RETURN count(rel);
+
+CALL gds.graph.create(
+  'papersGraph',
+  'User',
+  'FOLLOW',
+    {
+		relationshipProperties: 'cost'
+    }
+)
+
+
+MATCH (source:User {id: '30343'}), (target:User {id: '15821'})
+CALL gds.beta.shortestPath.yens.stream('papersGraph', {
+    sourceNode: id(source),
+    targetNode: id(target),
+    k: 3,
+    relationshipWeightProperty: 'cost'
+})
+YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs
+RETURN
+    index,
+    gds.util.asNode(sourceNode).id AS sourceNodeName,
+    gds.util.asNode(targetNode).id AS targetNodeName,
+    totalCost,
+    [nodeId IN nodeIds | gds.util.asNode(nodeId).id] AS nodeNames,
+    costs
+ORDER BY index
+
+
+
+
+CALL gds.pageRank.stream('papersGraph', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  relationshipWeightProperty: 'cost'
+})
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId).id AS name, score
+ORDER BY score DESC, name ASC LIMIT 10
+WITH COLLECT(name) as sc
+MATCH (p:User)
+WHERE p.id in sc
+MERGE (t:Top{id:p.id})
+
+//save to
+
+:param depth => 4
+
+
+
+MATCH (a:User{id:'29422'})
+WITH id(a) AS startNode
+CALL gds.alpha.bfs.stream('papersGraph', {startNode: startNode, maxDepth: $depth})
+YIELD path
+UNWIND [ n in nodes(path) | n.id] AS tags
+RETURN count(tags)
+
+
+
+
+
+MATCH (q:Top)
+WITH COLLECT(q) as query
+UNWIND query as search
+MATCH (a:User{id:search})
+WITH id(a) AS startNode
+CALL gds.alpha.bfs.stream('papersGraph', {startNode: startNode, maxDepth: $depth})
+YIELD path
+UNWIND [ n in nodes(path) | n.id] AS tag
+RETURN count(tag)
+
+
+
+
+
+
+CALL gds.pageRank.stream('papersGraph', {
+  maxIterations: 20,
+  dampingFactor: 0.85,
+  relationshipWeightProperty: 'cost'
+})
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId).id AS name, score
+ORDER BY score DESC, name ASC LIMIT 10
+RETURN score, name
+
+WITH COLLECT(name) as sc
+MATCH (p:User)
+WHERE p.id in sc
+UNWIND p as p_b
+MATCH (a:User{id:p.id})
+WITH id(a) AS startNode
+CALL gds.alpha.bfs.stream('papersGraph', {startNode: startNode, maxDepth: $depth})
+YIELD path
+UNWIND [ n in nodes(path) | n.id] AS tags
+RETURN answer
+
+
+
+
+
+
+
+
